@@ -1,0 +1,34 @@
+[project]
+name = "dnd-skill-router"
+version = "0.1.0"
+description = "Local skill router proxy for Obsidian Copilot and LM Studio"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi[standard]",
+  "uvicorn[standard]",
+  "pydantic",
+  "pydantic-settings",
+  "langgraph",
+  "openai",
+  "httpx",
+  "python-dotenv",
+  "pyyaml",
+  "orjson",
+  "tenacity",
+  "loguru",
+  "pytest-asyncio"
+]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["skills*", "logs*", "tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "lm_studio_live: live integration tests that call a running LM Studio server and may take minutes because of JIT model loading",
+]

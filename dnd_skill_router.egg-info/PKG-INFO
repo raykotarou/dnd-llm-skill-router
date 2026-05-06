@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: dnd-skill-router
+Version: 0.1.0
+Summary: Local skill router proxy for Obsidian Copilot and LM Studio
+Requires-Python: >=3.11
+Requires-Dist: fastapi[standard]
+Requires-Dist: uvicorn[standard]
+Requires-Dist: pydantic
+Requires-Dist: pydantic-settings
+Requires-Dist: langgraph
+Requires-Dist: openai
+Requires-Dist: httpx
+Requires-Dist: python-dotenv
+Requires-Dist: pyyaml
+Requires-Dist: orjson
+Requires-Dist: tenacity
+Requires-Dist: loguru

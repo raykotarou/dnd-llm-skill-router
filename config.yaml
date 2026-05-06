@@ -1,0 +1,67 @@
+server:
+  host: "127.0.0.1"
+  port: 8000
+  enable_cors: true
+
+lm_studio:
+  base_url: "http://127.0.0.1:1234/v1"
+  api_key: "lm-studio"
+  router_model: "qwen/qwen3.5-9b"
+  # main_model: "qwen/qwen3.5-9b"
+  main_model: "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive"
+  request_timeout_seconds: 600
+
+routing:
+  confidence_threshold: 80
+  max_ranked_skills: 3
+  use_manual_commands: true
+
+skills:
+  directory: "./skills"
+  default_skill: "story"
+  shared_answer_rules: "./skills/_shared/answer_rules.md"
+  consistency_lens: "./skills/_shared/consistency_lens.md"
+
+generation:
+  router_temperature: 0.0
+  router_max_tokens: 600
+  main_temperature: 0.1
+  main_max_tokens: 50000
+  stream: false
+
+logging:
+  level: "INFO"
+  log_file: "./logs/router.log"
+  debug_full_payload: false
+
+streaming:
+  enabled: true
+  mode: "real"
+  fallback_to_fake_streaming: false
+  lm_studio_timeout_seconds: 600
+  send_done_on_disconnect: true
+
+responses_api:
+  enabled: true
+  proxy_to_lm_studio_responses: true
+  support_streaming: true
+  support_previous_response_id_passthrough: true
+  store_previous_responses: false
+  unsupported_tools_policy: "ignore"
+  reasoning:
+    mode: "think_block" # drop | think_block | plain | pass_through
+    stream_insertion_strategy: "transform_reasoning_events"
+    preserve_usage: true
+    strip_reasoning_from_completed: true
+    log_presence: true
+    log_raw_reasoning: false
+  diagnostics:
+    enabled: false
+    placement: "end" # start | end | both
+    format: "visible_block" # visible_block | html_comment
+    include_source_api: true
+    include_reasoning_mode: true
+    include_streaming_strategy: true
+    include_selected_skill: true
+    include_confidence: true
+    include_manual_skill: true

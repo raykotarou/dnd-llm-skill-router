@@ -1,0 +1,12 @@
+fastapi[standard]
+uvicorn[standard]
+pydantic
+pydantic-settings
+langgraph
+openai
+httpx
+python-dotenv
+pyyaml
+orjson
+tenacity
+loguru
