@@ -1,81 +1,92 @@
 # dnd-skill-router
 
-Локальный OpenAI-compatible proxy для Obsidian Copilot и LM Studio. Proxy принимает chat-запросы, выбирает один DnD-oriented skill, обогащает prompt правилами проекта и отправляет итоговый запрос в локальную модель LM Studio.
+`dnd-skill-router` - Локальный OpenAI-compatible proxy для Obsidian Copilot и LM Studio. Proxy принимает chat-запросы, выбирает один DnD-oriented skill, обогащает prompt правилами проекта и отправляет итоговый запрос в локальную модель LM Studio
 
-## Назначение
+Проект полезен, если вы ведете или готовите DnD-кампанию в Obsidian и хотите, чтобы локальная модель отвечала не "вообще как чат-бот", а в одном из понятных рабочих режимов: сцена, анализ, шаблон, лор или правила.
 
-Проект помогает направлять запросы по подготовке кампании в один сфокусированный режим:
+## Кому подойдет
 
-- `story` - сцены, NPC, диалоги, сюжетные ходы.
-- `analysis` - противоречия, логические дыры, проверки согласованности.
+Подойдет, если вы собираетесь:
+
+- подключить Obsidian плагин Copilot к локальным моделям через OpenAI-compatible API;
+- автоматически выбирать стиль ответа под текущую задачу мастера;
+- хранить skill-ы в отдельных markdown-файлах и менять их без правки кода;
+- использовать LM Studio как backend для генерации;
+- сохранить приватность заметок: запросы идут в локальный proxy и локальный LM Studio server.
+
+Проект не поддерживает следующие функции:
+
+- **RAG по всему Obsidian vault**: Не реализовано в proxy. Может быть добавлено, например, через Obsidian плагин Copilot (плагин поддерживает эмбеддинг модели для поиска по заметкам) или LM Studio через MCP.
+- **Совмещение скиллов**: На один запрос выбирается только один skill
+
+## Как это работает
+
+Основной поток:
+
+```text
+Obsidian Copilot или другой OpenAI-compatible клиент
+  -> FastAPI proxy dnd-skill-router
+  -> LangGraph pipeline выбора skill
+  -> LM Studio /v1/chat/completions или /v1/responses
+  -> ответ отправляется обратно клиенту
+```
+
+На каждый запрос router смотрит на последнее `user`-сообщение и выбирает один skill:
+
+- `story` - сцены, NPC, диалоги, сюжетные ходы, описания.
+- `analysis` - противоречия, логические дыры, проверка согласованности.
 - `template` - структуры, таблицы, повторно используемые форматы.
-- `lore` - мир, фракции, культуры, география.
-- `rules` - механики DnD, проверки, rulings, статблоки.
+- `lore` - мир, фракции, культуры, история, география.
+- `rules` - правила DnD, механики, проверки, rulings, статблоки.
 
-## Архитектура
+Если в начале последнего сообщения есть manual command, например `!story`, LLM-router не вызывается: skill выбирается напрямую. Если команды нет, proxy вызывает router model в LM Studio, получает ранжированный список skills и сравнивает уверенность с порогом из `config.yaml`.
 
-Основной поток запроса:
+Если уверенность ниже порога, main model не вызывается. Вместо этого клиент получает уточняющий ответ с предложением выбрать skill вручную.
 
-```text
-Obsidian Copilot
-  -> FastAPI OpenAI-compatible proxy
-  -> LangGraph router pipeline
-  -> LM Studio OpenAI-compatible /v1/chat/completions
-```
+## Быстрый старт
 
-Узлы pipeline:
+Требования:
 
-```text
-parse_request
-extract_latest_user_message
-detect_manual_skill_command
-rank_skills
-select_skill_or_clarify
-load_skill_prompt
-enrich_prompt
-call_lm_studio
-format_response
-```
+- Python 3.11 или новее;
+- запущенный LM Studio server с OpenAI-compatible endpoint;
+- одна или две загруженные модели в LM Studio: router model для классификации и main model для ответа.
 
-Исходные сообщения Obsidian сохраняются. Инструкции proxy добавляются как system messages перед оригинальной историей диалога.
-
-## Установка
-
-Используйте Python 3.11 или новее.
+Установка:
 
 ```bash
 cd dnd-skill-router
 pip install -e .
 ```
 
-При необходимости создайте локальный env-файл:
+Создайте локальный `.env`, если хотите хранить рядом пример локальных переменных окружения:
 
 ```bash
 cp .env.example .env
 ```
 
-В Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-## Запуск
+Проверьте `config.yaml` и укажите реальные имена моделей из LM Studio:
 
-Минимальный запуск:
-
-```bash
-pip install -e .
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+```yaml
+lm_studio:
+  base_url: "http://127.0.0.1:1234/v1"
+  api_key: "lm-studio"
+  router_model: "qwen/qwen3.5-9b"
+  main_model: "your-main-model-name"
 ```
 
-Если `uvicorn` не находится в `PATH`, используйте:
+Запуск proxy:
 
 ```bash
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Проверка состояния:
+Проверка:
 
 ```text
 http://127.0.0.1:8000/health
@@ -87,28 +98,9 @@ OpenAI-compatible base URL:
 http://127.0.0.1:8000/v1
 ```
 
-## Настройка LM Studio
-
-Запустите локальный сервер LM Studio с OpenAI-compatible endpoint.
-
-Конфиг по умолчанию ожидает:
-
-```yaml
-lm_studio:
-  base_url: "http://127.0.0.1:1234/v1"
-  api_key: "lm-studio"
-  router_model: "qwen-router-8b"
-  main_model: "qwen-main-35b"
-  request_timeout_seconds: 600
-```
-
-Измените имена моделей в `config.yaml`, чтобы они совпадали с моделями, загруженными в LM Studio. Router model используется для классификации skill. Main model пишет итоговый ответ.
-
-Большие локальные модели могут отвечать долго. `request_timeout_seconds` задаёт timeout ожидания ответа LM Studio. Timeout долгой генерации не ретраится автоматически, чтобы proxy не ставил повторные тяжёлые запросы в очередь LM Studio.
-
 ## Настройка Obsidian Copilot
 
-Настройте Obsidian Copilot на OpenAI-compatible provider:
+В Obsidian Copilot выберите OpenAI-compatible provider и укажите:
 
 ```text
 Base URL: http://127.0.0.1:8000/v1
@@ -116,7 +108,7 @@ Model: dnd-skill-router
 API key: any non-empty value
 ```
 
-Proxy предоставляет:
+Proxy умеет работать с:
 
 ```text
 GET  /v1/models
@@ -124,23 +116,137 @@ POST /v1/chat/completions
 POST /v1/responses
 ```
 
-## Manual Commands
+## Примеры запросов
 
-Manual commands имеют приоритет над LLM routing и работают только в начале последнего пользовательского сообщения:
+Автоматический выбор skill:
 
 ```text
-!story Придумай сцену в таверне
-!analysis Проверь сцену на несостыковки
-!template Сделай шаблон NPC
-!lore Опиши королевство
-!rules Как работает grapple
+Придумай сцену в таверне, где NPC пытается скрыть важную улику.
 ```
 
-Команда может быть удалена перед prompt enrichment, чтобы итоговая модель получила пользовательский запрос без технического префикса.
+Ручной выбор skill:
 
-## Confidence Threshold
+```text
+!analysis Проверь эту сцену на противоречия с прошлой сессией.
+!template Сделай шаблон заметки для фракции в Obsidian.
+!lore Опиши портовое королевство и его конфликт с магократией.
+!rules Как обработать погоню по крышам в DnD?
+```
 
-`config.yaml` управляет порогом уверенности routing:
+Manual commands работают только в начале последнего пользовательского сообщения:
+
+```text
+!story Придумай тревожное описание заброшенного храма.
+```
+
+Поддерживаемые команды:
+
+```text
+!story
+!analysis
+!template
+!lore
+!rules
+```
+
+## Где лежат инструкции skills
+
+Skills хранятся как markdown-файлы в директории `skills/`:
+
+```text
+skills/story.md
+skills/analysis.md
+skills/template.md
+skills/lore.md
+skills/rules.md
+```
+
+Общие инструкции:
+
+```text
+skills/_shared/answer_rules.md
+skills/_shared/consistency_lens.md
+```
+
+При генерации proxy добавляет system messages в таком порядке:
+
+1. базовый системный prompt проекта;
+2. общие правила ответа из `answer_rules.md`;
+3. prompt выбранного skill;
+4. `consistency_lens.md` для skills, которым нужна проверка согласованности;
+5. оригинальную историю сообщений клиента.
+
+История сообщений не удаляется. Текущая задача определяется последним `user`-сообщением.
+
+## Wiki: `.env`
+
+В проекте есть `.env.example`:
+
+```env
+APP_ENV=local
+CONFIG_PATH=./config.yaml
+```
+
+Приложение читает переменные из окружения через `os.getenv`. Сам файл `.env` сейчас не загружается автоматически кодом приложения, хотя зависимость `python-dotenv` установлена. Поэтому значения из `.env` начнут влиять на запуск только если вы экспортировали их в shell или запускаете приложение через инструмент, который сам подгружает `.env`.
+
+`CONFIG_PATH` - путь к YAML-конфигу. Это единственная переменная окружения, которая сейчас напрямую влияет на запуск приложения. Если переменная не задана, используется `./config.yaml`.
+
+Примеры:
+
+```env
+CONFIG_PATH=./config.yaml
+CONFIG_PATH=./config.local.yaml
+CONFIG_PATH=D:/Configs/dnd-skill-router.yaml
+```
+
+PowerShell-пример без `.env`:
+
+```powershell
+$env:CONFIG_PATH="./config.local.yaml"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+`APP_ENV` - служебная переменная для обозначения окружения. В текущем коде она не используется для ветвления логики, но может быть полезна для локальных скриптов или будущих настроек.
+
+Файл `.env` не должен попадать в git. Он уже добавлен в `.gitignore`.
+
+## Wiki: `config.yaml`
+
+`config.yaml` - главный файл настройки проекта. Схема строгая: неизвестные поля считаются ошибкой, поэтому лучше добавлять параметры только после поддержки в коде.
+
+### `server`
+
+```yaml
+server:
+  host: "127.0.0.1"
+  port: 8000
+  enable_cors: true
+```
+
+- `host` - адрес, на котором должен слушать proxy.
+- `port` - порт proxy.
+- `enable_cors` - включает CORS `*`. Полезно для клиентов, которые обращаются к API из браузерного окружения.
+
+Важно: при запуске через `uvicorn --host ... --port ...` фактический bind задает команда запуска. Значения `server.host` и `server.port` используются приложением для логов и как проектная настройка.
+
+### `lm_studio`
+
+```yaml
+lm_studio:
+  base_url: "http://127.0.0.1:1234/v1"
+  api_key: "lm-studio"
+  router_model: "qwen/qwen3.5-9b"
+  main_model: "your-main-model-name"
+  request_timeout_seconds: 600
+```
+
+- `base_url` - OpenAI-compatible URL LM Studio.
+- `api_key` - ключ для OpenAI SDK/httpx. LM Studio обычно принимает любое непустое значение.
+- `router_model` - модель, которая классифицирует последнее сообщение по skills.
+- `main_model` - модель, которая пишет итоговый ответ пользователю.
+- `request_timeout_seconds` - timeout обычных запросов к LM Studio. Timeout не ретраится автоматически, чтобы не ставить повторные тяжелые генерации в очередь.
+
+### `routing`
 
 ```yaml
 routing:
@@ -149,77 +255,153 @@ routing:
   use_manual_commands: true
 ```
 
-Правило:
+- `confidence_threshold` - минимальная уверенность router model от 0 до 100. Ниже порога proxy просит уточнить skill.
+- `max_ranked_skills` - сколько вариантов skills сохранять из ответа router model.
+- `use_manual_commands` - проектная настройка для manual commands. В текущем pipeline команды поддерживаются через отдельный узел маршрутизации.
 
-```text
-confidence >= threshold -> selected skill
-confidence < threshold  -> clarification response
+### `skills`
+
+```yaml
+skills:
+  directory: "./skills"
+  default_skill: "story"
+  shared_answer_rules: "./skills/_shared/answer_rules.md"
+  consistency_lens: "./skills/_shared/consistency_lens.md"
 ```
 
-Clarification возвращается как обычное OpenAI-compatible сообщение ассистента, поэтому Obsidian Copilot отображает его как стандартный ответ.
+- `directory` - папка с markdown-файлами skills.
+- `default_skill` - запасной skill в настройках. В текущем pipeline выбор обычно идет через manual command, router model или clarification.
+- `shared_answer_rules` - общие правила ответа, добавляются к каждому skill.
+- `consistency_lens` - дополнительная инструкция для проверки согласованности. Сейчас добавляется для `story`, `lore`, `template` и `analysis`.
 
-## Примеры
+### `generation`
 
-Story:
-
-```text
-Придумай сцену в таверне, где NPC пытается скрыть важную улику.
+```yaml
+generation:
+  router_temperature: 0.0
+  router_max_tokens: 600
+  main_temperature: 0.1
+  main_max_tokens: 50000
+  stream: false
 ```
 
-Analysis:
+- `router_temperature` - температура router model. Обычно лучше держать `0.0`, чтобы классификация была стабильной.
+- `router_max_tokens` - лимит ответа router model.
+- `main_temperature` - температура main model.
+- `main_max_tokens` - лимит ответа main model для Chat Completions.
+- `stream` - проектное значение по умолчанию. Фактический streaming для запроса берется из payload клиента и дополнительно ограничивается `streaming.enabled`.
 
-```text
-!analysis Проверь эту сцену на противоречия с прошлой сессией.
+Если клиент передает безопасные параметры генерации (`temperature`, `max_tokens`, `top_p`, `stop` и другие поддерживаемые поля), proxy передает их в LM Studio для main model.
+
+### `logging`
+
+```yaml
+logging:
+  level: "INFO"
+  log_file: "./logs/router.log"
+  debug_full_payload: false
 ```
 
-Template:
+- `level` - уровень логирования.
+- `log_file` - путь к файлу логов. Директория создается автоматически.
+- `debug_full_payload` - если `true`, в routing log попадает полный исходный payload. По умолчанию выключено, чтобы не логировать весь контекст Obsidian.
 
-```text
-!template Сделай шаблон заметки для фракции в Obsidian.
+### `streaming`
+
+```yaml
+streaming:
+  enabled: true
+  mode: "real"
+  fallback_to_fake_streaming: false
+  lm_studio_timeout_seconds: 600
+  send_done_on_disconnect: true
 ```
 
-Lore:
+- `enabled` - разрешает streaming-ответы proxy, если клиент запросил `stream: true`.
+- `mode` - режим streaming. Сейчас основной рабочий режим - реальный passthrough stream от LM Studio.
+- `fallback_to_fake_streaming` - проектная настройка для fallback-поведения.
+- `lm_studio_timeout_seconds` - timeout streaming-запросов к LM Studio.
+- `send_done_on_disconnect` - настройка поведения при разрывах stream.
 
-```text
-Опиши историю портового королевства и его конфликт с магократией.
-```
-
-Rules:
-
-```text
-!rules Как обработать погоню по крышам в DnD?
-```
-
-## Responses API и Reasoning
-
-`POST /v1/responses` работает как дополнительный внешний формат для клиентов, которым нужен OpenAI-compatible Responses API. Внутри используется тот же Skill Router: запрос адаптируется в messages, выбирается skill, собирается enriched prompt, затем proxy вызывает LM Studio `/v1/responses`.
-
-Reasoning events LM Studio для Responses API управляются настройкой:
+### `responses_api`
 
 ```yaml
 responses_api:
-  reasoning:
-    mode: "drop"
+  enabled: true
+  proxy_to_lm_studio_responses: true
+  support_streaming: true
+  support_previous_response_id_passthrough: true
+  store_previous_responses: false
+  unsupported_tools_policy: "ignore"
 ```
 
-Режимы:
+- `enabled` - включает endpoint `POST /v1/responses`.
+- `proxy_to_lm_studio_responses` - указывает, что Responses API проксируется в LM Studio `/responses`.
+- `support_streaming` - разрешает streaming для Responses API.
+- `support_previous_response_id_passthrough` - позволяет передавать `previous_response_id` дальше в LM Studio.
+- `store_previous_responses` - хранение предыдущих responses. В MVP состояние не сохраняется.
+- `unsupported_tools_policy` - что делать с неподдерживаемыми полями tools: `ignore` или `reject`.
 
-- `drop` - reasoning не показывается пользователю, но usage с `reasoning_tokens` сохраняется.
-- `think_block` - reasoning стримится как обычный output text внутри `<think>...</think>`.
-- `plain` - reasoning стримится как обычный output text без тегов.
-- `pass_through` - raw reasoning events от LM Studio проходят как есть; режим для отладки.
-
-Для отладки можно включить diagnostics:
+#### `responses_api.reasoning`
 
 ```yaml
-responses_api:
-  diagnostics:
-    enabled: true
-    placement: "start"      # start, end или both
-    format: "visible_block" # visible_block или html_comment
+reasoning:
+  mode: "think_block"
+  stream_insertion_strategy: "transform_reasoning_events"
+  preserve_usage: true
+  strip_reasoning_from_completed: true
+  log_presence: true
+  log_raw_reasoning: false
 ```
 
-Streaming-проверка:
+- `mode` - как обрабатывать reasoning events LM Studio:
+  - `drop` - не показывать reasoning пользователю;
+  - `think_block` - показывать reasoning как текст внутри `<think>...</think>`;
+  - `plain` - показывать reasoning как обычный текст без тегов;
+  - `pass_through` - пропускать raw reasoning events как есть, удобно для отладки.
+- `stream_insertion_strategy` - текущая стратегия трансформации reasoning stream.
+- `preserve_usage` - сохранять usage, включая reasoning tokens, если они пришли от LM Studio.
+- `strip_reasoning_from_completed` - удалять reasoning из финального completed-события.
+- `log_presence` - логировать факт наличия reasoning.
+- `log_raw_reasoning` - логировать сырой reasoning. Включайте осторожно: это может записывать чувствительный текст.
+
+#### `responses_api.diagnostics`
+
+```yaml
+diagnostics:
+  enabled: false
+  placement: "end"
+  format: "visible_block"
+  include_source_api: true
+  include_reasoning_mode: true
+  include_streaming_strategy: true
+  include_selected_skill: true
+  include_confidence: true
+  include_manual_skill: true
+```
+
+- `enabled` - добавлять диагностический блок в Responses API ответ.
+- `placement` - куда вставлять диагностику: `start`, `end` или `both`.
+- `format` - формат блока: видимый текст `visible_block` или `html_comment`.
+- `include_*` - какие поля маршрутизации и режима ответа включать в диагностику.
+
+## Проверка API вручную
+
+Chat Completions:
+
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "dnd-skill-router",
+    "messages": [
+      {"role": "user", "content": "!story Опиши вход в древний храм"}
+    ],
+    "stream": false
+  }'
+```
+
+Responses API streaming:
 
 ```bash
 curl -N http://127.0.0.1:8000/v1/responses \
@@ -231,21 +413,15 @@ curl -N http://127.0.0.1:8000/v1/responses \
   }'
 ```
 
-Non-streaming-проверка:
+## Тесты
+
+Обычные тесты не требуют запущенного LM Studio:
 
 ```bash
-curl http://127.0.0.1:8000/v1/responses \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "dnd-skill-router",
-    "input": "Придумай короткую сцену в таверне",
-    "stream": false
-  }'
+python -m pytest
 ```
 
-## Live-тесты LM Studio
-
-Обычный `python -m pytest` не вызывает LM Studio. Для проверки реальной интеграции есть отдельный live-набор, который может выполняться долго из-за JIT loading моделей:
+Live-интеграция с LM Studio вынесена отдельно:
 
 ```powershell
 $env:RUN_LM_STUDIO_INTEGRATION="1"
@@ -254,38 +430,15 @@ $env:LM_STUDIO_LIVE_MAX_OUTPUT_TOKENS="80"
 python -m pytest tests/test_lm_studio_live_integration.py -m lm_studio_live -s
 ```
 
-Перед запуском убедитесь, что LM Studio server запущен, OpenAI-compatible endpoints доступны, а `router_model` и `main_model` в `config.yaml` совпадают с именами моделей в LM Studio. Эти тесты проверяют `/v1/models`, router-call через `/v1/chat/completions`, non-streaming `/v1/responses` и streaming `/v1/responses` с history, где есть `assistant`-сообщение.
+Перед live-тестами убедитесь, что LM Studio server запущен, endpoints доступны, а `router_model` и `main_model` совпадают с именами моделей в LM Studio.
 
 ## Ограничения MVP
 
-- Streaming поддерживается для `/v1/chat/completions` и `/v1/responses`, но proxy не хранит состояние между запросами.
-- Skill routing зависит от качества JSON, который возвращает router model.
-- На один запрос используется только один основной skill.
-- Manual commands должны находиться в начале последнего пользовательского сообщения.
-- Proxy не хранит состояние диалога; Obsidian Copilot отправляет историю в каждом запросе.
-- Подсчёт токенов в локальных fallback-ответах приблизительный или равен нулю.
-- LM Studio должен быть запущен отдельно.
-
-## Запрещено в MVP
-
-В MVP нельзя реализовывать:
-
-- multi-skill pipeline;
-- persistent routing state;
-- long-term memory;
-- RAG по Obsidian vault;
-- автоматическое редактирование заметок;
-- автоматический critic-pass;
-- автоматическое управление выгрузкой моделей;
-- сложный context filtering;
-- UI вне Obsidian Copilot.
-
-Также нельзя:
-
-- удалять историю сообщений из payload;
-- выбирать skill по всей истории вместо последнего user message;
-- запускать main model при низкой уверенности;
-- вызывать router model при manual command;
-- логировать полный Obsidian context по умолчанию;
-- подменять задачу пользователя собственной цепочкой reasoning;
-- сохранять состояние между запросами.
+- На один запрос выбирается только один skill.
+- Proxy не хранит состояние между запросами.
+- Obsidian Copilot должен отправлять историю диалога в каждом запросе.
+- Routing зависит от качества JSON, который возвращает router model.
+- При низкой уверенности main model не вызывается.
+- Manual commands должны быть в начале последнего пользовательского сообщения.
+- Полный Obsidian context не логируется по умолчанию.
+- RAG, long-term memory, автоматическое редактирование заметок и multi-skill pipeline не реализованы.
